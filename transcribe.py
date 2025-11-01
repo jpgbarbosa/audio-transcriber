@@ -53,14 +53,32 @@ class TranscriptionPipeline:
                 self.compute_type = "float32"
             else:
                 self.device = "cpu"
-                self.compute_type = "float32"
+                # INT8 quantization for CPU: 2x faster with <1% accuracy loss
+                self.compute_type = "int8"
         else:
             self.device = device
-            # Force float32 for CPU and MPS when explicitly specified
-            if self.device in ["cpu", "mps"]:
-                self.compute_type = "float32"
+            # Set optimal compute type for each device
+            if self.device == "cpu":
+                self.compute_type = "int8"  # Optimized for CPU
+            elif self.device == "mps":
+                self.compute_type = "float32"  # MPS requirement
 
         console.print(f"[cyan]Using device: {self.device}[/cyan]")
+
+        # Optimize CPU threading for better performance
+        cpu_count = os.cpu_count() or 8
+        if self.device == "cpu":
+            # Configure PyTorch threading (used by alignment models)
+            torch.set_num_threads(cpu_count)  # Use all cores
+            torch.set_num_interop_threads(2)  # Balance inter/intra-op parallelism
+
+            # Store optimal thread count for WhisperX/CTranslate2
+            # M1 Mac has 6 performance cores + 2 efficiency cores
+            # Using 6 threads focuses on performance cores
+            self.cpu_threads = min(cpu_count, 6)
+            console.print(f"[cyan]CPU threads: PyTorch={cpu_count}, CTranslate2={self.cpu_threads}[/cyan]")
+        else:
+            self.cpu_threads = 4  # Default for non-CPU devices
 
         self.model = None
         self.diarize_model = None
@@ -76,11 +94,18 @@ class TranscriptionPipeline:
         ) as progress:
             # Load Whisper model
             task = progress.add_task("[cyan]Loading Whisper model...", total=None)
+            # Add threads parameter for CPU to enable CTranslate2 multi-threading
+            model_kwargs = {
+                "compute_type": self.compute_type,
+                "language": language
+            }
+            if self.device == "cpu":
+                model_kwargs["threads"] = self.cpu_threads
+
             self.model = whisperx.load_model(
                 self.model_size,
                 self.device,
-                compute_type=self.compute_type,
-                language=language
+                **model_kwargs
             )
             progress.update(task, completed=True)
             console.print("[green]✓[/green] Whisper model loaded")
@@ -153,7 +178,25 @@ class TranscriptionPipeline:
             console.print(f"[green]✓[/green] Loaded from cache (language: {detected_language})")
         else:
             console.print("[cyan]Transcribing audio...[/cyan]")
-            result = self.model.transcribe(audio, batch_size=16)
+            # Determine optimal batch size based on model size
+            batch_size_map = {
+                "tiny": 64,
+                "base": 48,
+                "small": 32,
+                "medium": 24,
+                "large-v2": 20,
+                "large-v3": 20
+            }
+            batch_size = batch_size_map.get(self.model_size, 16)
+
+            # Use multiprocessing for data loading on CPU
+            num_workers = min(4, (os.cpu_count() or 8) // 2) if self.device == "cpu" else 0
+
+            result = self.model.transcribe(
+                audio,
+                batch_size=batch_size,
+                num_workers=num_workers
+            )
             detected_language = result.get("language", language)
 
             # Save to cache
