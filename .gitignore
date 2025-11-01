@@ -1,0 +1,33 @@
+# Virtual environment
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environment
+.env
+
+# Cache directories
+.transcribe_cache/
+
+# Audio files (large)
+*.m4a
+*.mp3
+*.wav
+
+# Output files (generated)
+*.rttm
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store

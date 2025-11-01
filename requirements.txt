@@ -1,0 +1,17 @@
+# Core transcription and diarization
+whisperx
+pyannote.audio>=3.1.0
+torch
+torchaudio
+
+# CLI and utilities
+click>=8.0.0
+rich>=13.0.0
+python-dotenv>=1.0.0
+
+# Audio processing
+pydub>=0.25.0
+soundfile>=0.12.0
+
+# Optional but recommended for better performance
+faster-whisper>=0.10.0
