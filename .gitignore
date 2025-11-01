@@ -15,13 +15,9 @@ __pycache__/
 # Cache directories
 .transcribe_cache/
 
-# Audio files (large)
-*.m4a
-*.mp3
-*.wav
-
-# Output files (generated)
-*.rttm
+# Input and output directories
+input/
+output/
 
 # IDE
 .vscode/
