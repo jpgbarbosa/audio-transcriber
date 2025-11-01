@@ -63,7 +63,14 @@ class TranscriptionPipeline:
             elif self.device == "mps":
                 self.compute_type = "float32"  # MPS requirement
 
-        console.print(f"[cyan]Using device: {self.device}[/cyan]")
+        # Hybrid device strategy: Use MPS for diarization even when transcription uses CPU
+        # This is because CTranslate2 doesn't support MPS, but PyTorch (diarization) does
+        if self.device == "cpu" and torch.backends.mps.is_available():
+            self.diarize_device = "mps"
+            console.print(f"[cyan]Using hybrid devices: Transcription=CPU (INT8), Diarization=MPS (GPU)[/cyan]")
+        else:
+            self.diarize_device = self.device
+            console.print(f"[cyan]Using device: {self.device}[/cyan]")
 
         # Optimize CPU threading for better performance
         cpu_count = os.cpu_count() or 8
@@ -117,11 +124,13 @@ class TranscriptionPipeline:
                     "pyannote/speaker-diarization-3.1",
                     use_auth_token=self.hf_token
                 )
-                # Move to device
-                if self.device != "cpu":
-                    self.diarize_model.to(torch.device(self.device))
+                # Move to optimal device (may be different from transcription device)
+                if self.diarize_device != "cpu":
+                    self.diarize_model.to(torch.device(self.diarize_device))
+                    console.print(f"[green]✓[/green] Diarization model loaded on {self.diarize_device.upper()}")
+                else:
+                    console.print("[green]✓[/green] Diarization model loaded on CPU")
                 progress.update(task, completed=True)
-                console.print("[green]✓[/green] Diarization model loaded")
             else:
                 console.print("[yellow]⚠[/yellow] HF_TOKEN not found. Speaker diarization will be skipped.")
 
