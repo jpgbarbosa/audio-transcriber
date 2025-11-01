@@ -189,14 +189,7 @@ class TranscriptionPipeline:
             }
             batch_size = batch_size_map.get(self.model_size, 16)
 
-            # Use multiprocessing for data loading on CPU
-            num_workers = min(4, (os.cpu_count() or 8) // 2) if self.device == "cpu" else 0
-
-            result = self.model.transcribe(
-                audio,
-                batch_size=batch_size,
-                num_workers=num_workers
-            )
+            result = self.model.transcribe(audio, batch_size=batch_size)
             detected_language = result.get("language", language)
 
             # Save to cache
