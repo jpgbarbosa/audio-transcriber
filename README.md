@@ -1,5 +1,9 @@
 # Meeting Transcriber
 
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 A command-line tool for transcribing audio recordings with automatic speaker diarization (identifying who spoke when). Optimized for meeting recordings with multiple speakers from a single microphone.
 
 ## Features
@@ -20,10 +24,11 @@ A command-line tool for transcribing audio recordings with automatic speaker dia
 
 ## Installation
 
-### 1. Clone or download this repository
+### 1. Clone this repository
 
 ```bash
-cd /Users/barbosa/Documents/whitesmith/transcriber
+git clone https://github.com/YOUR_USERNAME/transcriber.git
+cd transcriber
 ```
 
 ### 2. Create a virtual environment (recommended)

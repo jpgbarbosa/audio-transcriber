@@ -1,17 +1,24 @@
-# Core transcription and diarization
-whisperx
-pyannote.audio>=3.1.0
-torch
-torchaudio
+# Python 3.8+ required
 
-# CLI and utilities
-click>=8.0.0
-rich>=13.0.0
-python-dotenv>=1.0.0
+# Core ML frameworks
+torch>=2.0.0,<3.0.0
+torchaudio>=2.0.0,<3.0.0
+
+# Transcription and diarization
+whisperx>=3.1.1,<4.0.0
+pyannote.audio>=3.1.0,<4.0.0
+faster-whisper>=1.0.0,<2.0.0
+
+# CLI and display
+click>=8.1.0,<9.0.0
+rich>=13.0.0,<14.0.0
+
+# Configuration and utilities
+python-dotenv>=1.0.0,<2.0.0
 
 # Audio processing
-pydub>=0.25.0
-soundfile>=0.12.0
+pydub>=0.25.1,<1.0.0
+soundfile>=0.12.1,<1.0.0
 
-# Optional but recommended for better performance
-faster-whisper>=0.10.0
+# Data processing
+pandas>=2.0.0,<3.0.0
