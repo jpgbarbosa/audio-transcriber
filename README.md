@@ -1,8 +1,9 @@
 # Meeting Transcriber
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/jpgbarbosa/audio-transcriber/actions/workflows/lint.yml/badge.svg)](https://github.com/jpgbarbosa/audio-transcriber/actions/workflows/lint.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 A command-line tool for transcribing audio recordings with automatic speaker diarization (identifying who spoke when). Optimized for meeting recordings with multiple speakers from a single microphone.
 

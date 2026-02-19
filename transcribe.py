@@ -9,24 +9,24 @@ Backends:
   - transformers: MPS GPU via HuggingFace Transformers pipeline
 """
 
+import json
 import os
 import re
 import sys
-import json
 import tempfile
-from pathlib import Path
-from typing import Optional, List
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 import click
+import pandas as pd
+import soundfile as sf
 import torch
 import whisperx
-import soundfile as sf
-import pandas as pd
 from dotenv import load_dotenv
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 from pyannote.audio import Pipeline
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 # Load environment variables
 load_dotenv()
@@ -138,9 +138,7 @@ class TranscriptionPipeline:
     def load_models(self, language: Optional[str] = None):
         """Load transcription and diarization models."""
         with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
         ) as progress:
             if self.backend == "mlx":
                 # MLX models are loaded lazily by mlx_whisper.transcribe()
@@ -149,8 +147,7 @@ class TranscriptionPipeline:
                     import mlx_whisper  # noqa: F401
                 except ImportError:
                     raise RuntimeError(
-                        "mlx-whisper is required for the 'mlx' backend. "
-                        "Install it with: pip install mlx-whisper"
+                        "mlx-whisper is required for the 'mlx' backend. Install it with: pip install mlx-whisper"
                     )
                 model_id = MLX_MODEL_MAP.get(self.model_size, f"mlx-community/whisper-{self.model_size}")
                 progress.update(task, completed=True)
@@ -159,7 +156,8 @@ class TranscriptionPipeline:
             elif self.backend == "transformers":
                 task = progress.add_task("[cyan]Loading Whisper model (HF Transformers)...", total=None)
                 try:
-                    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline as hf_pipeline
+                    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+                    from transformers import pipeline as hf_pipeline
                 except ImportError:
                     raise RuntimeError(
                         "transformers is required for the 'transformers' backend. "
@@ -179,8 +177,13 @@ class TranscriptionPipeline:
                 processor = AutoProcessor.from_pretrained(model_id)
 
                 batch_size_map = {
-                    "tiny": 64, "base": 48, "small": 40, "medium": 32,
-                    "large-v2": 32, "large-v3": 32, "large-v3-turbo": 32,
+                    "tiny": 64,
+                    "base": 48,
+                    "small": 40,
+                    "medium": 32,
+                    "large-v2": 32,
+                    "large-v3": 32,
+                    "large-v3-turbo": 32,
                 }
                 batch_size = batch_size_map.get(self.model_size, 16)
 
@@ -210,11 +213,7 @@ class TranscriptionPipeline:
 
                 model_name = WHISPERX_MODEL_MAP.get(self.model_size, self.model_size)
 
-                self.model = whisperx.load_model(
-                    model_name,
-                    self.device,
-                    **model_kwargs
-                )
+                self.model = whisperx.load_model(model_name, self.device, **model_kwargs)
                 progress.update(task, completed=True)
                 console.print("[green]✓[/green] Whisper model loaded")
 
@@ -222,8 +221,7 @@ class TranscriptionPipeline:
             if self.hf_token:
                 task = progress.add_task("[cyan]Loading diarization model...", total=None)
                 self.diarize_model = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1",
-                    use_auth_token=self.hf_token
+                    "pyannote/speaker-diarization-3.1", use_auth_token=self.hf_token
                 )
                 if self.diarize_device != "cpu":
                     self.diarize_model.to(torch.device(self.diarize_device))
@@ -237,7 +235,7 @@ class TranscriptionPipeline:
     def _detect_language_hf(self, audio_path: str) -> str:
         """Detect language using the Whisper model (transformers backend)."""
         audio = whisperx.load_audio(audio_path)
-        sample = audio[:16000 * 30]  # First 30 seconds
+        sample = audio[: 16000 * 30]  # First 30 seconds
         input_features = self.hf_pipe.feature_extractor(
             sample, sampling_rate=16000, return_tensors="pt"
         ).input_features.to(self.hf_pipe.device, dtype=self.hf_pipe.torch_dtype)
@@ -246,7 +244,7 @@ class TranscriptionPipeline:
         token_str = self.hf_pipe.tokenizer.decode(predicted_ids[0], skip_special_tokens=False)
 
         # Parse language code from tokens like "<|startoftranscript|><|pt|>"
-        lang_match = re.search(r'<\|([a-z]{2})\|>', token_str)
+        lang_match = re.search(r"<\|([a-z]{2})\|>", token_str)
         if lang_match:
             detected = lang_match.group(1)
             console.print(f"[green]✓[/green] Detected language: {detected}")
@@ -297,11 +295,13 @@ class TranscriptionPipeline:
             start, end = ts
             if start is None or end is None:
                 continue
-            segments.append({
-                "text": chunk["text"],
-                "start": float(start),
-                "end": float(end),
-            })
+            segments.append(
+                {
+                    "text": chunk["text"],
+                    "start": float(start),
+                    "end": float(end),
+                }
+            )
 
         return {
             "segments": segments,
@@ -314,7 +314,7 @@ class TranscriptionPipeline:
         language: Optional[str] = None,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
-        use_cache: bool = True
+        use_cache: bool = True,
     ) -> dict:
         """
         Transcribe audio file with speaker diarization.
@@ -341,7 +341,7 @@ class TranscriptionPipeline:
         # Check if final result is cached
         if use_cache and final_cache.exists():
             console.print("[cyan]Loading complete transcription from cache...[/cyan]")
-            with open(final_cache, 'r', encoding='utf-8') as f:
+            with open(final_cache, "r", encoding="utf-8") as f:
                 result = json.load(f)
             console.print("[green]✓[/green] Complete transcription loaded from cache")
             return result
@@ -360,7 +360,7 @@ class TranscriptionPipeline:
         # Transcribe (with caching)
         if use_cache and transcription_cache.exists():
             console.print("[cyan]Loading cached transcription...[/cyan]")
-            with open(transcription_cache, 'r', encoding='utf-8') as f:
+            with open(transcription_cache, "r", encoding="utf-8") as f:
                 result = json.load(f)
             detected_language = result.get("language", language)
             console.print(f"[green]✓[/green] Loaded from cache (language: {detected_language})")
@@ -374,8 +374,13 @@ class TranscriptionPipeline:
             else:
                 # WhisperX backend (original)
                 batch_size_map = {
-                    "tiny": 64, "base": 48, "small": 40, "medium": 32,
-                    "large-v2": 32, "large-v3": 32, "large-v3-turbo": 32,
+                    "tiny": 64,
+                    "base": 48,
+                    "small": 40,
+                    "medium": 32,
+                    "large-v2": 32,
+                    "large-v3": 32,
+                    "large-v3-turbo": 32,
                 }
                 batch_size = batch_size_map.get(self.model_size, 16)
                 result = self.model.transcribe(audio, batch_size=batch_size)
@@ -384,7 +389,7 @@ class TranscriptionPipeline:
 
             # Save to cache
             if use_cache:
-                with open(transcription_cache, 'w', encoding='utf-8') as f:
+                with open(transcription_cache, "w", encoding="utf-8") as f:
                     json.dump(result, f, indent=2, ensure_ascii=False)
 
             console.print(f"[green]✓[/green] Transcription complete (language: {detected_language})")
@@ -393,7 +398,7 @@ class TranscriptionPipeline:
         if self.backend != "mlx":
             if use_cache and aligned_cache.exists():
                 console.print("[cyan]Loading cached alignment...[/cyan]")
-                with open(aligned_cache, 'r', encoding='utf-8') as f:
+                with open(aligned_cache, "r", encoding="utf-8") as f:
                     result = json.load(f)
                 console.print("[green]✓[/green] Loaded from cache")
             else:
@@ -417,7 +422,7 @@ class TranscriptionPipeline:
 
                 # Save to cache
                 if use_cache:
-                    with open(aligned_cache, 'w', encoding='utf-8') as f:
+                    with open(aligned_cache, "w", encoding="utf-8") as f:
                         json.dump(result, f, indent=2, ensure_ascii=False)
 
                 console.print("[green]✓[/green] Timestamp alignment complete")
@@ -443,11 +448,7 @@ class TranscriptionPipeline:
                 # Convert pyannote Annotation to whisperx format (DataFrame)
                 diarize_segments = []
                 for turn, _, speaker in diarization.itertracks(yield_label=True):
-                    diarize_segments.append({
-                        "start": turn.start,
-                        "end": turn.end,
-                        "speaker": speaker
-                    })
+                    diarize_segments.append({"start": turn.start, "end": turn.end, "speaker": speaker})
 
                 # Convert to DataFrame (required by whisperx.assign_word_speakers)
                 diarize_df = pd.DataFrame(diarize_segments)
@@ -462,7 +463,7 @@ class TranscriptionPipeline:
 
         # Save final result to cache
         if use_cache:
-            with open(final_cache, 'w', encoding='utf-8') as f:
+            with open(final_cache, "w", encoding="utf-8") as f:
                 json.dump(result, f, indent=2, ensure_ascii=False)
 
         return result
@@ -476,7 +477,7 @@ def validate_audio_file(audio_path: str) -> Path:
         console.print(f"[red]Error: File not found: {audio_path}[/red]")
         sys.exit(1)
 
-    supported_extensions = {'.mp3', '.wav', '.m4a', '.flac', '.ogg', '.opus', '.webm'}
+    supported_extensions = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".opus", ".webm"}
     if path.suffix.lower() not in supported_extensions:
         console.print(f"[yellow]Warning: {path.suffix} may not be supported.[/yellow]")
         console.print(f"Supported formats: {', '.join(supported_extensions)}")
@@ -486,7 +487,7 @@ def validate_audio_file(audio_path: str) -> Path:
 
 def save_rttm(result: dict, output_path: str):
     """Save diarization results in RTTM format."""
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         for segment in result.get("segments", []):
             speaker = segment.get("speaker", "SPEAKER_00")
             start = segment.get("start", 0)
@@ -500,7 +501,7 @@ def save_rttm(result: dict, output_path: str):
 
 def save_txt(result: dict, output_path: str):
     """Save human-readable transcript with speaker labels."""
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         current_speaker = None
 
         for segment in result.get("segments", []):
@@ -522,62 +523,48 @@ def save_txt(result: dict, output_path: str):
 
 def save_json(result: dict, output_path: str):
     """Save complete results as JSON."""
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
     console.print(f"[green]✓[/green] JSON saved to: {output_path}")
 
 
 @click.command()
-@click.argument('audio_file', type=click.Path(exists=True))
+@click.argument("audio_file", type=click.Path(exists=True))
 @click.option(
-    '--language', '-l',
-    type=click.Choice(['en', 'pt', 'auto'], case_sensitive=False),
-    default='auto',
-    help='Language of the audio (en=English, pt=Portuguese, auto=detect)'
+    "--language",
+    "-l",
+    type=click.Choice(["en", "pt", "auto"], case_sensitive=False),
+    default="auto",
+    help="Language of the audio (en=English, pt=Portuguese, auto=detect)",
 )
 @click.option(
-    '--model', '-m',
-    type=click.Choice(['tiny', 'base', 'small', 'medium', 'large-v2', 'large-v3', 'large-v3-turbo']),
-    default='large-v3',
-    help='Whisper model size (larger = more accurate but slower)'
+    "--model",
+    "-m",
+    type=click.Choice(["tiny", "base", "small", "medium", "large-v2", "large-v3", "large-v3-turbo"]),
+    default="large-v3",
+    help="Whisper model size (larger = more accurate but slower)",
 )
 @click.option(
-    '--backend', '-b',
-    type=click.Choice(['whisperx', 'mlx', 'transformers'], case_sensitive=False),
-    default='whisperx',
-    help='Transcription backend: whisperx (CPU), mlx (Apple GPU, fastest), transformers (MPS GPU)'
+    "--backend",
+    "-b",
+    type=click.Choice(["whisperx", "mlx", "transformers"], case_sensitive=False),
+    default="whisperx",
+    help="Transcription backend: whisperx (CPU), mlx (Apple GPU, fastest), transformers (MPS GPU)",
 )
+@click.option("--min-speakers", type=int, default=None, help="Minimum number of speakers (optional)")
+@click.option("--max-speakers", type=int, default=None, help="Maximum number of speakers (optional)")
+@click.option("--output", "-o", type=click.Path(), default=None, help="Output directory (default: same as input file)")
 @click.option(
-    '--min-speakers',
-    type=int,
-    default=None,
-    help='Minimum number of speakers (optional)'
-)
-@click.option(
-    '--max-speakers',
-    type=int,
-    default=None,
-    help='Maximum number of speakers (optional)'
-)
-@click.option(
-    '--output', '-o',
-    type=click.Path(),
-    default=None,
-    help='Output directory (default: same as input file)'
-)
-@click.option(
-    '--format', '-f',
-    type=click.Choice(['rttm', 'txt', 'json', 'all'], case_sensitive=False),
+    "--format",
+    "-f",
+    type=click.Choice(["rttm", "txt", "json", "all"], case_sensitive=False),
     multiple=True,
-    default=['all'],
-    help='Output format(s)'
+    default=["all"],
+    help="Output format(s)",
 )
 @click.option(
-    '--device',
-    type=click.Choice(['auto', 'cuda', 'mps', 'cpu']),
-    default='auto',
-    help='Device to use for computation'
+    "--device", type=click.Choice(["auto", "cuda", "mps", "cpu"]), default="auto", help="Device to use for computation"
 )
 def main(
     audio_file: str,
@@ -588,7 +575,7 @@ def main(
     max_speakers: Optional[int],
     output: Optional[str],
     format: tuple,
-    device: str
+    device: str,
 ):
     """
     Transcribe audio files with speaker diarization.
@@ -630,7 +617,7 @@ def main(
     output_base = output_dir / audio_path.stem
 
     # Convert language
-    lang = None if language == 'auto' else language
+    lang = None if language == "auto" else language
 
     try:
         # Initialize pipeline
@@ -643,10 +630,7 @@ def main(
         # Transcribe
         start_time = datetime.now()
         result = pipeline.transcribe(
-            str(audio_path),
-            language=lang,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers
+            str(audio_path), language=lang, min_speakers=min_speakers, max_speakers=max_speakers
         )
         elapsed = (datetime.now() - start_time).total_seconds()
 
@@ -654,19 +638,19 @@ def main(
 
         # Determine output formats
         formats = set(format)
-        if 'all' in formats:
-            formats = {'rttm', 'txt', 'json'}
+        if "all" in formats:
+            formats = {"rttm", "txt", "json"}
 
         # Save outputs
         console.print("\n[cyan]Saving outputs...[/cyan]")
 
-        if 'rttm' in formats:
+        if "rttm" in formats:
             save_rttm(result, f"{output_base}.rttm")
 
-        if 'txt' in formats:
+        if "txt" in formats:
             save_txt(result, f"{output_base}.txt")
 
-        if 'json' in formats:
+        if "json" in formats:
             save_json(result, f"{output_base}.json")
 
         console.print("\n[bold green]✓ Done![/bold green]\n")
@@ -678,5 +662,5 @@ def main(
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
