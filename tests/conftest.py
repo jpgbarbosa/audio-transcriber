@@ -1,4 +1,36 @@
+import sys
+from unittest.mock import MagicMock
+
 import pytest
+
+# ---------------------------------------------------------------------------
+# Mock heavy ML dependencies before transcribe.py is imported by any test.
+# pytest processes conftest.py before collecting test modules, so these mocks
+# are in place by the time `from transcribe import ...` runs.
+# ---------------------------------------------------------------------------
+_HEAVY_MODULES = [
+    "torch",
+    "torch.cuda",
+    "torch.backends",
+    "torch.backends.mps",
+    "whisperx",
+    "soundfile",
+    "pandas",
+    "dotenv",
+    "pyannote",
+    "pyannote.audio",
+    "rich",
+    "rich.console",
+    "rich.progress",
+]
+
+for _mod in _HEAVY_MODULES:
+    sys.modules.setdefault(_mod, MagicMock())
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
