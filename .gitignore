@@ -25,5 +25,9 @@ output/
 *.swp
 *.swo
 
+# Linting / testing
+.ruff_cache/
+.pytest_cache/
+
 # macOS
 .DS_Store
