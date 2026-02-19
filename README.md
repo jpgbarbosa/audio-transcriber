@@ -9,17 +9,17 @@ A command-line tool for transcribing audio recordings with automatic speaker dia
 
 ## Features
 
-- **High-Accuracy Transcription**: Uses OpenAI's Whisper (via WhisperX) for state-of-the-art speech recognition
+- **High-Accuracy Transcription**: Uses OpenAI's Whisper with three backend options
+- **Multiple Backends**: WhisperX (CPU), MLX (Apple GPU, fastest on Apple Silicon), HuggingFace Transformers (MPS/CUDA)
 - **Speaker Diarization**: Automatically identifies and labels different speakers using pyannote.audio
 - **Multi-Language Support**: Excellent support for Portuguese and English (and 97 other languages)
-- **Fast Processing**: WhisperX provides 70x realtime transcription speed with GPU/M1 acceleration
 - **Multiple Output Formats**: RTTM (standard diarization), human-readable text, and JSON
 - **Local Processing**: All processing happens on your machine - no cloud services required
 
 ## Requirements
 
-- Python 3.8 or higher
-- MacBook M1/M2/M3 (MPS acceleration) OR NVIDIA GPU (CUDA) OR CPU (slower)
+- Python 3.12 or higher
+- MacBook M1/M2/M3 (Apple GPU via MLX or MPS) OR NVIDIA GPU (CUDA) OR CPU (slower)
 - ~5GB disk space for models
 - HuggingFace account (free) for speaker diarization models
 
@@ -28,8 +28,8 @@ A command-line tool for transcribing audio recordings with automatic speaker dia
 ### 1. Clone this repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/transcriber.git
-cd transcriber
+git clone https://github.com/jpgbarbosa/audio-transcriber.git
+cd audio-transcriber
 ```
 
 ### 2. Create a virtual environment (recommended)
@@ -83,6 +83,27 @@ This will create three files in the same directory as your audio:
 - `meeting.txt` - Human-readable transcript with speaker labels
 - `meeting.json` - Complete data with timestamps and metadata
 
+### Choose a Backend
+
+Three transcription backends are available:
+
+```bash
+# WhisperX — CPU with INT8 quantization (default)
+python transcribe.py meeting.mp3 --backend whisperx
+
+# MLX — Apple GPU, fastest on Apple Silicon (~7x faster than CPU)
+python transcribe.py meeting.mp3 --backend mlx
+
+# Transformers — MPS (Apple GPU) or CUDA via HuggingFace pipeline
+python transcribe.py meeting.mp3 --backend transformers
+```
+
+| Backend | Device | Best for |
+|---------|--------|----------|
+| `whisperx` | CPU (INT8) | Default, works everywhere |
+| `mlx` | Apple GPU (MLX) | Fastest on M1/M2/M3/M4 Macs |
+| `transformers` | MPS / CUDA | GPU fallback when MLX isn't available |
+
 ### Specify Language
 
 For faster processing and better accuracy, specify the language:
@@ -123,14 +144,15 @@ python transcribe.py meeting.mp3 --model large-v3
 ```
 
 **Model Comparison:**
-| Model | Size | Speed | Accuracy | M1 32GB Compatible |
-|-------|------|-------|----------|-------------------|
-| tiny | 39M | Fastest | Good | ✓ |
-| base | 74M | Very Fast | Good | ✓ |
-| small | 244M | Fast | Better | ✓ |
-| medium | 769M | Medium | Great | ✓ |
-| large-v2 | 1.5GB | Slower | Excellent | ✓ |
-| large-v3 | 1.5GB | Slower | Best | ✓ |
+| Model | Size | Speed | Accuracy |
+|-------|------|-------|----------|
+| tiny | 39M | Fastest | Good |
+| base | 74M | Very Fast | Good |
+| small | 244M | Fast | Better |
+| medium | 769M | Medium | Great |
+| large-v2 | 1.5GB | Slower | Excellent |
+| large-v3 | 1.5GB | Slower | Best |
+| large-v3-turbo | 1.5GB | Fast | Excellent |
 
 ### Custom Output Location
 
@@ -156,7 +178,8 @@ python transcribe.py meeting.mp3 --format all
 ```bash
 python transcribe.py meeting_recording.mp3 \
   --language pt \
-  --model large-v3 \
+  --model large-v3-turbo \
+  --backend mlx \
   --min-speakers 2 \
   --max-speakers 4 \
   --output ./transcripts/ \
@@ -224,27 +247,24 @@ Full transcription data including word-level timestamps, confidence scores, and 
 
 ## Performance Tips
 
-### For M1 Mac (Your Setup)
+### Apple Silicon (M1/M2/M3/M4)
 
-Your M1 Pro with 32GB RAM is excellent for this task:
+- **Recommended**: `--backend mlx` — native Apple GPU acceleration, ~7x faster than CPU
+- **Alternative**: `--backend transformers` — uses MPS (Metal Performance Shaders)
+- **Hybrid mode**: When using `whisperx` backend, diarization still runs on MPS GPU automatically
+- **Tip**: `--model large-v3-turbo --backend mlx` gives the best speed/accuracy tradeoff
 
-- **Recommended model**: `large-v3` (best accuracy, still fast on M1)
-- **Expected speed**: ~5-10x realtime (a 30-minute recording takes 3-6 minutes)
-- **Memory usage**: ~4-6GB for large-v3 model
+### NVIDIA GPU
 
-### For CPU-Only Systems
+- Automatically detected when CUDA is available
+- `--backend transformers` or `--backend whisperx` both support CUDA
+- `large-v3` can process at 50-70x realtime speed
 
-If you don't have a GPU:
+### CPU-Only Systems
 
 - Use `--model medium` or `--model small` for faster processing
-- Expect 0.5-2x realtime speed (a 30-minute recording may take 15-60 minutes)
-
-### For NVIDIA GPU
-
-If you have CUDA available:
-
-- Will automatically use GPU acceleration
-- `large-v3` can process at 50-70x realtime speed
+- `whisperx` backend uses INT8 quantization for best CPU performance
+- Expect 0.5-2x realtime speed
 
 ## Troubleshooting
 
@@ -269,8 +289,9 @@ You need to set up your HuggingFace token for speaker diarization:
 
 ### Slow Processing
 
+- On Apple Silicon, try `--backend mlx` for the fastest results
 - Verify GPU/MPS acceleration is being used (check console output)
-- Use a smaller model: `--model medium`
+- Use a smaller model: `--model medium` or `--model large-v3-turbo`
 - Ensure no other heavy applications are running
 
 ## Advanced Usage
@@ -304,15 +325,17 @@ for segment in data['segments']:
 ### Architecture
 
 1. **Audio Loading**: Loads and preprocesses audio to 16kHz mono
-2. **Transcription**: WhisperX transcribes speech to text
-3. **Alignment**: Forced alignment provides precise word-level timestamps
+2. **Transcription**: Whisper model transcribes speech to text (via selected backend)
+3. **Alignment**: Forced alignment provides precise word-level timestamps (WhisperX/Transformers backends; MLX uses native cross-attention timestamps)
 4. **Diarization**: pyannote.audio identifies different speakers
 5. **Assignment**: Speaker labels are assigned to transcribed segments
 
 ### Models Used
 
 - **Whisper**: OpenAI's open-source speech recognition model
-- **WhisperX**: Optimized pipeline for faster processing and better timestamps
+- **WhisperX**: CPU-optimized pipeline with CTranslate2 INT8 quantization
+- **MLX-Whisper**: Apple GPU-accelerated inference via MLX framework
+- **HuggingFace Transformers**: MPS/CUDA GPU inference pipeline
 - **pyannote.audio 3.1**: State-of-the-art speaker diarization
 - **Wav2Vec2**: Forced alignment for precise timestamps
 
@@ -338,5 +361,7 @@ Suggestions and improvements are welcome! Feel free to open issues or submit pul
 
 Built with:
 - [WhisperX](https://github.com/m-bain/whisperX) by Max Bain
+- [MLX-Whisper](https://github.com/ml-explore/mlx-examples) by Apple MLX team
+- [HuggingFace Transformers](https://github.com/huggingface/transformers) by Hugging Face
 - [pyannote.audio](https://github.com/pyannote/pyannote-audio) by Hervé Bredin
 - [OpenAI Whisper](https://github.com/openai/whisper) by OpenAI
