@@ -9,6 +9,12 @@ whisperx>=3.1.1,<4.0.0
 pyannote.audio>=3.1.0,<4.0.0
 faster-whisper>=1.0.0,<2.0.0
 
+# GPU-accelerated backends (optional, install as needed)
+# mlx-whisper: Apple Silicon GPU via MLX (~7x faster than CPU)
+# pip install mlx-whisper
+# transformers: MPS/CUDA GPU via HuggingFace pipeline
+# pip install transformers
+
 # CLI and display
 click>=8.1.0,<9.0.0
 rich>=13.0.0,<14.0.0
