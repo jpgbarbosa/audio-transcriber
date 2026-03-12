@@ -9,6 +9,7 @@ Backends:
   - transformers: MPS GPU via HuggingFace Transformers pipeline
 """
 
+import copy
 import json
 import os
 import re
@@ -469,6 +470,87 @@ class TranscriptionPipeline:
         return result
 
 
+def filter_hallucinations(result, min_word_probability=0.10, max_word_repetitions=3):
+    """Filter Whisper hallucinations from transcription results.
+
+    Removes low-probability words and collapses runs of repeated words.
+
+    Args:
+        result: Transcription result dict with "segments" list.
+        min_word_probability: Drop words below this probability threshold.
+        max_word_repetitions: Collapse runs of identical words to at most this many.
+
+    Returns:
+        A new result dict with hallucinated content removed.
+    """
+    filtered = copy.deepcopy(result)
+    new_segments = []
+
+    for segment in filtered.get("segments", []):
+        words = segment.get("words")
+
+        if words is not None:
+            # Filter by probability
+            kept = []
+            for w in words:
+                prob = w.get("probability", w.get("score"))
+                if prob is None or prob >= min_word_probability:
+                    kept.append(w)
+
+            # Collapse consecutive identical words
+            collapsed = []
+            for w in kept:
+                word_text = w.get("word", "").strip().lower()
+                if collapsed:
+                    prev_text = collapsed[-1][0]
+                    run_length = collapsed[-1][1]
+                    if word_text == prev_text:
+                        if run_length < max_word_repetitions:
+                            collapsed[-1] = (prev_text, run_length + 1, w)
+                            continue
+                        else:
+                            # Skip — run already at max
+                            continue
+                collapsed.append((word_text, 1, w))
+
+            # Rebuild words list preserving original word dicts
+            final_words = []
+            # We need to track all kept words, not just the last in each run
+            final_words = []
+            run_words = []
+            for w in kept:
+                word_text = w.get("word", "").strip().lower()
+                if run_words and word_text == run_words[-1].get("word", "").strip().lower():
+                    if len(run_words) < max_word_repetitions:
+                        run_words.append(w)
+                    # else skip
+                else:
+                    final_words.extend(run_words)
+                    run_words = [w]
+            final_words.extend(run_words)
+
+            segment["words"] = final_words
+            segment["text"] = " ".join(w.get("word", "").strip() for w in final_words).strip()
+
+            if final_words:
+                new_segments.append(segment)
+        else:
+            # No words array — use regex to collapse repeated words in text
+            text = segment.get("text", "")
+            text = re.sub(
+                r"\b(\w+)(\s+\1){" + str(max_word_repetitions) + r",}",
+                r"\1",
+                text,
+                flags=re.IGNORECASE,
+            )
+            segment["text"] = text.strip()
+            if segment["text"]:
+                new_segments.append(segment)
+
+    filtered["segments"] = new_segments
+    return filtered
+
+
 def validate_audio_file(audio_path: str) -> Path:
     """Validate audio file exists and has supported extension."""
     path = Path(audio_path)
@@ -566,6 +648,12 @@ def save_json(result: dict, output_path: str):
 @click.option(
     "--device", type=click.Choice(["auto", "cuda", "mps", "cpu"]), default="auto", help="Device to use for computation"
 )
+@click.option(
+    "--no-hallucination-filter",
+    is_flag=True,
+    default=False,
+    help="Disable hallucination filter (low-probability word removal and repetition collapsing)",
+)
 def main(
     audio_file: str,
     language: str,
@@ -576,6 +664,7 @@ def main(
     output: Optional[str],
     format: tuple,
     device: str,
+    no_hallucination_filter: bool,
 ):
     """
     Transcribe audio files with speaker diarization.
@@ -636,6 +725,14 @@ def main(
 
         console.print(f"\n[green]✓[/green] Transcription completed in {elapsed:.1f}s")
 
+        # Apply hallucination filter
+        if no_hallucination_filter:
+            filtered_result = result
+        else:
+            console.print("[cyan]Filtering hallucinations...[/cyan]")
+            filtered_result = filter_hallucinations(result)
+            console.print("[green]✓[/green] Hallucination filter applied")
+
         # Determine output formats
         formats = set(format)
         if "all" in formats:
@@ -645,12 +742,13 @@ def main(
         console.print("\n[cyan]Saving outputs...[/cyan]")
 
         if "rttm" in formats:
-            save_rttm(result, f"{output_base}.rttm")
+            save_rttm(filtered_result, f"{output_base}.rttm")
 
         if "txt" in formats:
-            save_txt(result, f"{output_base}.txt")
+            save_txt(filtered_result, f"{output_base}.txt")
 
         if "json" in formats:
+            # Save raw result to JSON (preserves full data for debugging)
             save_json(result, f"{output_base}.json")
 
         console.print("\n[bold green]✓ Done![/bold green]\n")
